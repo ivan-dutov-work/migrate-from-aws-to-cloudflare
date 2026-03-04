@@ -1,0 +1,133 @@
+name: Deploy Infrastructure to AWS
+
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: 'Terraform action to perform'
+        required: true
+        default: 'plan'
+        type: choice
+        options:
+          - plan
+          - apply
+      environment:
+        description: 'Target environment'
+        required: true
+        default: 'production'
+        type: choice
+        options:
+          - production
+
+permissions:
+  id-token: write   # Required for OIDC authentication
+  contents: read
+
+jobs:
+  terraform:
+    name: Terraform ${{ inputs.action }}
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+    
+    defaults:
+      run:
+        working-directory: terraform
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ secrets.AWS_REGION }}
+          role-session-name: GitHubActions-TerraformAWS
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "~1.5"
+
+      - name: Terraform Format Check
+        id: fmt
+        run: terraform fmt -check -recursive
+        continue-on-error: true
+
+      - name: Terraform Init
+        id: init
+        run: terraform init
+
+      - name: Terraform Validate
+        id: validate
+        run: terraform validate -no-color
+
+      - name: Terraform Plan
+        id: plan
+        if: inputs.action == 'plan' || inputs.action == 'apply'
+        run: |
+          terraform plan -no-color -input=false \
+            -var="domain_name=${{ secrets.TF_VAR_DOMAIN_NAME }}" \
+            -var="hosted_zone_id=${{ secrets.TF_VAR_HOSTED_ZONE_ID }}" \
+            -var="bucket_name=${{ secrets.TF_VAR_BUCKET_NAME }}" \
+            -out=tfplan
+        continue-on-error: true
+
+      - name: Terraform Apply
+        id: apply
+        if: inputs.action == 'apply' && steps.plan.outcome == 'success'
+        run: terraform apply -auto-approve tfplan
+
+      - name: Terraform Output
+        id: output
+        if: inputs.action == 'apply' && steps.apply.outcome == 'success'
+        run: |
+          echo "## Terraform Outputs" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+          terraform output -no-color >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+
+      - name: Job Summary
+        if: always()
+        run: |
+          echo "## 🏗️ Terraform ${{ inputs.action }} Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Step | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|------|--------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Format | ${{ steps.fmt.outcome }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Init | ${{ steps.init.outcome }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Validate | ${{ steps.validate.outcome }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Plan | ${{ steps.plan.outcome }} |" >> $GITHUB_STEP_SUMMARY
+          
+          if [ "${{ inputs.action }}" == "apply" ]; then
+            echo "| Apply | ${{ steps.apply.outcome }} |" >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          if [ "${{ steps.apply.outcome }}" == "success" ]; then
+            echo "✅ Infrastructure deployed successfully!" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "⚠️ **Next Steps:**" >> $GITHUB_STEP_SUMMARY
+            echo "1. Copy the CloudFront Distribution ID from outputs above" >> $GITHUB_STEP_SUMMARY
+            echo "2. Update the \`CLOUDFRONT_DISTRIBUTION_ID\` repository secret" >> $GITHUB_STEP_SUMMARY
+            echo "3. Run the **Deploy Site to AWS** workflow to upload your site" >> $GITHUB_STEP_SUMMARY
+          elif [ "${{ inputs.action }}" == "plan" ]; then
+            echo "📋 Review the plan above. If it looks good, run this workflow again with action=**apply**." >> $GITHUB_STEP_SUMMARY
+          fi
+
+      - name: Warning about state
+        run: |
+          echo "⚠️ **WARNING:** This workflow uses local Terraform state." >> $GITHUB_STEP_SUMMARY
+          echo "State is NOT persisted between workflow runs." >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "For production use, configure remote state backend in \`terraform/aws/providers.tf\`:" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`hcl" >> $GITHUB_STEP_SUMMARY
+          echo "terraform {" >> $GITHUB_STEP_SUMMARY
+          echo "  backend \"s3\" {" >> $GITHUB_STEP_SUMMARY
+          echo "    bucket = \"your-terraform-state-bucket\"" >> $GITHUB_STEP_SUMMARY
+          echo "    key    = \"gallery/terraform.tfstate\"" >> $GITHUB_STEP_SUMMARY
+          echo "    region = \"us-east-1\"" >> $GITHUB_STEP_SUMMARY
+          echo "  }" >> $GITHUB_STEP_SUMMARY
+          echo "}" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
