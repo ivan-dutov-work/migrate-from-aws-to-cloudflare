@@ -15,6 +15,11 @@ terraform {
       source  = "hashicorp/aws"
       version = "~> 5.0"
     }
+
+    cloudflare = {
+      source  = "cloudflare/cloudflare"
+      version = "~> 4.0"
+    }
   }
 
   # ── Remote State Backend (S3 + DynamoDB) ──────────────────
@@ -47,4 +52,8 @@ provider "aws" {
   default_tags {
     tags = var.tags
   }
+}
+
+provider "cloudflare" {
+  # Reads the API token from an environment variable for security.
 }

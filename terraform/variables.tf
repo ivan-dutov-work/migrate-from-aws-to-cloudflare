@@ -3,8 +3,8 @@ variable "domain_name" {
   type        = string
 }
 
-variable "hosted_zone_id" {
-  description = "Route 53 Hosted Zone ID for the domain"
+variable "cloudflare_zone_id" {
+  description = "Cloudflare Zone ID for the domain"
   type        = string
 }
 
@@ -26,4 +26,9 @@ variable "tags" {
     Project   = "gallery"
     ManagedBy = "terraform"
   }
+}
+
+variable "github_repo" {
+  description = "Your GitHub repository (e.g., ivan-dutov-work/migrate-from-aws-to-cloudflare)"
+  type        = string
 }
