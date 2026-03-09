@@ -1,16 +1,16 @@
 output "s3_bucket_name" {
   description = "Name of the S3 bucket holding the site assets"
-  value       = aws_s3_bucket.site.id
+  value       = module.storage.bucket_id
 }
 
 output "cloudfront_distribution_id" {
   description = "CloudFront distribution ID (needed for cache invalidation)"
-  value       = aws_cloudfront_distribution.site.id
+  value       = module.cdn.distribution_id
 }
 
 output "cloudfront_domain_name" {
   description = "CloudFront-assigned domain (*.cloudfront.net)"
-  value       = aws_cloudfront_distribution.site.domain_name
+  value       = module.cdn.cloudfront_domain_name
 }
 
 output "website_url" {
@@ -19,6 +19,6 @@ output "website_url" {
 }
 
 output "github_actions_role_arn" {
-  value       = aws_iam_role.github_actions.arn
-  description = "The ARN of the IAM role for GitHub Actions to assume"
+  description = "ARN of the IAM role for GitHub Actions to assume"
+  value       = module.ci.github_actions_role_arn
 }
