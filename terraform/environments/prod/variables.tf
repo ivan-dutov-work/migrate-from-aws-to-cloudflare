@@ -32,3 +32,14 @@ variable "github_repo" {
   description = "Your GitHub repository (e.g., ivan-dutov-work/migrate-from-aws-to-cloudflare)"
   type        = string
 }
+
+variable "cloudflare_account_id" {
+  description = "Cloudflare Account ID (Dashboard → right sidebar on any zone page)"
+  type        = string
+}
+
+variable "r2_location_hint" {
+  description = "Cloudflare R2 Location Hint (e.g., 'auto' or 'ENAM')"
+  type        = string
+  default     = "ENAM"
+}

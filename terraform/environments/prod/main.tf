@@ -44,3 +44,29 @@ module "ci" {
   bucket_arn                  = module.storage.bucket_arn
   cloudfront_distribution_arn = module.cdn.distribution_arn
 }
+
+# ╔═══════════════════════════════════════════════════════════════╗
+# ║  Cloudflare R2 Stack – R2 + CDN (proxy) + TLS (automatic)   ║
+# ╚═══════════════════════════════════════════════════════════════╝
+
+module "storage_r2" {
+  source = "../../modules/storage-r2"
+
+  cloudflare_account_id = var.cloudflare_account_id
+  cloudflare_zone_id    = var.cloudflare_zone_id
+  bucket_name           = var.bucket_name
+  domain_name           = var.domain_name
+  location_hint         = var.r2_location_hint
+
+  # Set to true during Phase 4 (DNS cutover) to bind the custom domain to R2.
+  # This immediately flips live traffic from CloudFront to Cloudflare.
+  enable_domain = false
+}
+
+module "cdn_r2" {
+  source = "../../modules/cdn-r2"
+
+  cloudflare_account_id = var.cloudflare_account_id
+  cloudflare_zone_id    = var.cloudflare_zone_id
+  domain_name           = var.domain_name
+}

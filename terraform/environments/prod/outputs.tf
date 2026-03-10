@@ -22,3 +22,10 @@ output "github_actions_role_arn" {
   description = "ARN of the IAM role for GitHub Actions to assume"
   value       = module.ci.github_actions_role_arn
 }
+
+# ── Cloudflare R2 ──
+
+output "r2_bucket_name" {
+  description = "Name of the R2 bucket holding the site assets"
+  value       = module.storage_r2.bucket_name
+}

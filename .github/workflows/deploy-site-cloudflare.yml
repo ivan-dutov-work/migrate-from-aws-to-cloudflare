@@ -1,0 +1,104 @@
+name: Deploy Site to Cloudflare
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Deployment environment"
+        required: true
+        default: "production"
+        type: choice
+        options:
+          - production
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build Astro Site
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Build site
+        run: bun run build
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+          retention-days: 7
+
+  deploy:
+    name: Deploy to Cloudflare R2
+    runs-on: ubuntu-latest
+    needs: build
+    environment: ${{ inputs.environment }}
+
+    env:
+      AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+      AWS_DEFAULT_REGION: auto
+
+    steps:
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+      # Two-pass sync replicates the AWS workflow's split Cache-Control strategy:
+      # Pass 1: Hashed static assets with immutable 1-year cache.
+      # Pass 2: Mutable files (HTML, XML, TXT) with must-revalidate.
+      - name: Sync to R2
+        run: |
+          # Pass 1: Static assets — long cache, immutable.
+          aws s3 sync dist/ s3://${{ secrets.R2_BUCKET_NAME }}/ \
+            --endpoint-url ${{ secrets.R2_ENDPOINT_URL }} \
+            --delete \
+            --cache-control "public, max-age=31536000, immutable" \
+            --exclude "*.html" \
+            --exclude "*.xml" \
+            --exclude "*.txt"
+
+          # Pass 2: HTML and mutable files — revalidate on every request.
+          aws s3 sync dist/ s3://${{ secrets.R2_BUCKET_NAME }}/ \
+            --endpoint-url ${{ secrets.R2_ENDPOINT_URL }} \
+            --cache-control "public, max-age=0, must-revalidate" \
+            --exclude "*" \
+            --include "*.html" \
+            --include "*.xml" \
+            --include "*.txt"
+
+      # Optional: explicit cache purge for assets at stable URLs.
+      # Not needed if all JS/CSS filenames are content-hashed (Astro default).
+      # Uncomment only if you have assets at fixed URLs that change on deploy.
+      #
+      # - name: Purge Cloudflare cache
+      #   run: |
+      #     curl -X POST \
+      #       "https://api.cloudflare.com/client/v4/zones/${{ secrets.CLOUDFLARE_ZONE_ID }}/purge_cache" \
+      #       -H "Authorization: Bearer ${{ secrets.CLOUDFLARE_API_TOKEN }}" \
+      #       -H "Content-Type: application/json" \
+      #       --data '{"purge_everything":true}'
+
+      - name: Deployment summary
+        run: |
+          echo "## Deployment Successful" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- **Target:** Cloudflare R2 (\`${{ secrets.R2_BUCKET_NAME }}\`)" >> $GITHUB_STEP_SUMMARY
+          echo "- **Cache:** HTML revalidates on every request. Static assets cached 1 year." >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Your site should be live immediately (no cache invalidation needed)." >> $GITHUB_STEP_SUMMARY
