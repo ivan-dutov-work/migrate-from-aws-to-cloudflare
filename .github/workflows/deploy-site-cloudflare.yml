@@ -62,18 +62,26 @@ jobs:
       # Two-pass sync replicates the AWS workflow's split Cache-Control strategy:
       # Pass 1: Hashed static assets with immutable 1-year cache.
       # Pass 2: Mutable files (HTML, XML, TXT) with must-revalidate.
+      #
+      # IMPORTANT: --exclude "gallery/*" prevents deletion of gallery images
+      # which are managed separately from the Astro build (via scripts/fetch-images.js
+      # or manual upload). Without this exclusion, --delete would wipe the gallery
+      # on every deploy because those images aren't in dist/.
       - name: Sync to R2
         run: |
           # Pass 1: Static assets — long cache, immutable.
+          # Exclude gallery/ from deletion.
           aws s3 sync dist/ s3://${{ secrets.R2_BUCKET_NAME }}/ \
             --endpoint-url ${{ secrets.R2_ENDPOINT_URL }} \
             --delete \
+            --exclude "gallery/*" \
             --cache-control "public, max-age=31536000, immutable" \
             --exclude "*.html" \
             --exclude "*.xml" \
             --exclude "*.txt"
 
           # Pass 2: HTML and mutable files — revalidate on every request.
+          # Gallery is already excluded by Pass 1's --delete scope.
           aws s3 sync dist/ s3://${{ secrets.R2_BUCKET_NAME }}/ \
             --endpoint-url ${{ secrets.R2_ENDPOINT_URL }} \
             --cache-control "public, max-age=0, must-revalidate" \
